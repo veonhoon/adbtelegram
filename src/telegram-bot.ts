@@ -162,23 +162,62 @@ Use these commands to manage your device farm!
       devicesByServer.get(device.server_id)!.push(device);
     });
 
-    // Build status message
+    let totalOnline = 0;
+    let totalDevices = 0;
+    const allOfflineDevices: Array<{server: string, device: Device}> = [];
+
+    // Build status message for each server
     for (const [serverId, serverDevices] of devicesByServer) {
       const server = servers.find(s => s.id === serverId);
       const serverName = server?.name || serverId;
       const serverStatus = server?.status === 'online' ? '🟢' : '🔴';
 
-      message += `${serverStatus} *${serverName}*\n`;
+      // Sort devices by phone number (extract number from "Phone-X")
+      const sortedDevices = serverDevices.sort((a, b) => {
+        const getPhoneNum = (d: Device) => {
+          const name = d.name || d.serial;
+          const match = name.match(/Phone-(\d+)/);
+          return match ? parseInt(match[1]) : 99999;
+        };
+        return getPhoneNum(a) - getPhoneNum(b);
+      });
 
-      serverDevices.forEach(device => {
-        const icon = this.getStatusIcon(device.status);
-        const timeSince = this.formatTimeSince(device.last_check);
-        const displayName = device.name || device.serial;
-        message += `  ${icon} *${displayName}* - ${device.status} (${timeSince})\n`;
+      // Count online devices
+      const onlineCount = sortedDevices.filter(d => d.status === 'online').length;
+      const deviceCount = sortedDevices.length;
+      totalOnline += onlineCount;
+      totalDevices += deviceCount;
+
+      message += `${serverStatus} *${serverName}* (${onlineCount}/${deviceCount} online)\n`;
+
+      // Show online devices
+      sortedDevices.forEach(device => {
+        if (device.status === 'online') {
+          const icon = this.getStatusIcon(device.status);
+          const displayName = device.name || device.serial;
+          message += `  ${icon} ${displayName}\n`;
+        } else {
+          // Collect offline devices
+          allOfflineDevices.push({server: serverName, device});
+        }
       });
 
       message += '\n';
     }
+
+    // Show offline devices section
+    if (allOfflineDevices.length > 0) {
+      message += `⚠️ *Offline Devices (${allOfflineDevices.length}):*\n`;
+      allOfflineDevices.forEach(({server, device}) => {
+        const icon = this.getStatusIcon(device.status);
+        const displayName = device.name || device.serial;
+        message += `  ${icon} ${displayName} - ${server} - ${device.status}\n`;
+      });
+      message += '\n';
+    }
+
+    // Overall summary
+    message += `📈 *Total: ${totalOnline}/${totalDevices} online*`;
 
     this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   }
