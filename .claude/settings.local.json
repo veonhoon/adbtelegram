@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(nul)",
+      "Bash(npm run build:*)",
+      "Bash(npm install)",
+      "Bash(cmd /c SIMPLE-SETUP.bat)",
+      "Bash(npm start)",
+      "Bash(node rename-devices.js:*)",
+      "Bash(sqlite3:*)",
+      "Bash(node generate-deployment.js:*)",
+      "Bash(for dir in lulu opti mini paso dojang)",
+      "Bash(do cp -r ../src ../dist ../node_modules ../package.json ../tsconfig.json \"$dir/\")",
+      "Bash(done)",
+      "Bash(cmd /c:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,219 @@
+╔═══════════════════════════════════════════════════════════════╗
+║         ADB TRACKER - DEPLOYMENT CHECKLIST                     ║
+║         122 Phones across 5 Servers                            ║
+╚═══════════════════════════════════════════════════════════════╝
+
+PREREQUISITES:
+✓ PM2 installed on all servers (npm install -g pm2)
+✓ Node.js 18+ installed on all servers
+✓ ADB installed on all servers
+✓ All servers can ping each other
+✓ GitHub repository created
+
+═══════════════════════════════════════════════════════════════
+
+STEP 1: SETUP LULU (MAIN SERVER) - ALREADY RUNNING ✓
+═══════════════════════════════════════════════════════════════
+
+1.1 Share Database Folder
+    □ Create: C:\ADBTracker
+    □ Copy database: copy adb_tracker.db C:\ADBTracker\
+    □ Share folder:
+      - Right-click C:\ADBTracker → Properties → Sharing
+      - Advanced Sharing → Share this folder
+      - Share name: ADBTracker
+      - Permissions: Full Control to Everyone
+
+1.2 Update Lulu Config
+    □ Edit .env:
+      DB_PATH=C:\ADBTracker\adb_tracker.db
+
+1.3 Stop Current Bot
+    □ Ctrl+C to stop npm start
+
+1.4 Start with PM2
+    □ Run: start-pm2-lulu.bat
+    □ Verify: pm2 list (should show "adb-lulu")
+
+1.5 Test Telegram
+    □ Send /status to bot
+    □ Should see 27 phones on Lulu
+    □ Send /notify to enable alerts
+
+═══════════════════════════════════════════════════════════════
+
+STEP 2: CLONE FROM GITHUB TO EACH SERVER
+═══════════════════════════════════════════════════════════════
+
+On each server (opti, mini, paso, dojang):
+
+2.1 Clone Repository
+    □ cd c:\
+    □ git clone https://github.com/YOUR_USERNAME/adb-tracker-bot.git
+    □ cd adb-tracker-bot
+
+2.2 Install Dependencies
+    □ npm install
+
+2.3 Build Project
+    □ npm run build
+
+═══════════════════════════════════════════════════════════════
+
+STEP 3: DEPLOY OPTI (29 phones)
+═══════════════════════════════════════════════════════════════
+
+3.1 On Opti Server
+    □ Copy deployment\opti\.env to root folder
+    □ Verify .env has:
+      - SERVER_ID=opti
+      - MODE=agent
+      - DB_PATH=\\lulu\ADBTracker\adb_tracker.db
+
+3.2 Test Database Access
+    □ dir \\lulu\ADBTracker
+    □ Should see adb_tracker.db
+
+3.3 Rename Devices
+    □ copy deployment\opti\rename-devices.js to root
+    □ node rename-devices.js
+    □ Should rename 29 phones
+
+3.4 Start with PM2
+    □ copy start-pm2-agent.bat (from deployment\opti)
+    □ Run: start-pm2-agent.bat
+    □ Verify: pm2 list (should show "adb-opti")
+
+3.5 Verify in Telegram
+    □ /servers (should show Lulu + Opti)
+    □ /devices opti (should show 29 phones)
+
+═══════════════════════════════════════════════════════════════
+
+STEP 4: DEPLOY MINI (19 phones)
+═══════════════════════════════════════════════════════════════
+
+4.1 On Mini Server
+    □ Copy deployment\mini\.env to root folder
+    □ Verify DB_PATH=\\lulu\ADBTracker\adb_tracker.db
+
+4.2 Rename & Start
+    □ copy deployment\mini\rename-devices.js to root
+    □ node rename-devices.js (19 phones)
+    □ copy start-pm2-agent.bat
+    □ start-pm2-agent.bat
+
+4.3 Verify
+    □ pm2 list (should show "adb-mini")
+    □ Telegram: /servers (should show 3 servers)
+
+═══════════════════════════════════════════════════════════════
+
+STEP 5: DEPLOY PASO (24 phones)
+═══════════════════════════════════════════════════════════════
+
+5.1 On Paso Server
+    □ Copy deployment\paso\.env to root
+    □ copy deployment\paso\rename-devices.js
+    □ node rename-devices.js (24 phones)
+    □ copy start-pm2-agent.bat
+    □ start-pm2-agent.bat
+
+5.2 Verify
+    □ pm2 list (should show "adb-paso")
+    □ Telegram: /servers (should show 4 servers)
+
+═══════════════════════════════════════════════════════════════
+
+STEP 6: DEPLOY DOJANG (13 phones)
+═══════════════════════════════════════════════════════════════
+
+6.1 On Dojang Server
+    □ Copy deployment\dojang\.env to root
+    □ copy deployment\dojang\rename-devices.js
+    □ node rename-devices.js (13 phones)
+    □ copy start-pm2-agent.bat
+    □ start-pm2-agent.bat
+
+6.2 Verify
+    □ pm2 list (should show "adb-dojang")
+    □ Telegram: /servers (should show ALL 5 servers!)
+
+═══════════════════════════════════════════════════════════════
+
+FINAL VERIFICATION
+═══════════════════════════════════════════════════════════════
+
+□ Telegram: /servers
+  Should show:
+    🟢 Lulu (31 devices)
+    🟢 Opti (29 devices)
+    🟢 Mini (19 devices)
+    🟢 Paso (24 devices)
+    🟢 Dojang (13 devices)
+
+□ Telegram: /status
+  Should show all 122 phones with Phone-X names
+
+□ Telegram: /stats
+  Should show:
+    Total Devices: 116 (or actual count online)
+
+□ PM2 on each server:
+  pm2 list - should show running process
+  pm2 save - save current config
+
+□ Test notification:
+  - Unplug a phone
+  - Wait 30 seconds
+  - Should get Telegram alert!
+
+═══════════════════════════════════════════════════════════════
+
+PM2 COMMANDS REFERENCE
+═══════════════════════════════════════════════════════════════
+
+pm2 list                    - Show all processes
+pm2 logs adb-lulu           - View logs (main server)
+pm2 logs adb-opti           - View logs (opti agent)
+pm2 restart adb-lulu        - Restart process
+pm2 stop adb-lulu           - Stop process
+pm2 delete adb-lulu         - Remove from PM2
+pm2 save                    - Save current config
+pm2 resurrect               - Restore saved config
+
+═══════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+Problem: Agent can't access \\lulu\ADBTracker\adb_tracker.db
+Fix:
+  1. ping lulu (verify network)
+  2. dir \\lulu\ADBTracker (test share access)
+  3. Check folder sharing permissions on lulu
+
+Problem: Devices not showing in Telegram
+Fix:
+  1. pm2 logs adb-{server} (check for errors)
+  2. adb devices (verify phones connected)
+  3. node rename-devices.js (re-run rename)
+
+Problem: PM2 process keeps stopping
+Fix:
+  1. pm2 logs adb-{server} (check error logs)
+  2. Verify .env configuration
+  3. Check Node.js and ADB are in PATH
+
+═══════════════════════════════════════════════════════════════
+
+🎉 DEPLOYMENT COMPLETE!
+
+You now have:
+✅ 122 phones monitored across 5 servers
+✅ ONE Telegram bot managing everything
+✅ PM2 keeping everything alive 24/7
+✅ Real-time notifications
+✅ Central management from Lulu
+
+═══════════════════════════════════════════════════════════════
