@@ -21,7 +21,8 @@
       "Bash(tasklist:*)",
       "Bash(findstr:*)",
       "Bash(adb devices:*)",
-      "Bash(node initialize-expected-devices.js:*)"
+      "Bash(node initialize-expected-devices.js:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
