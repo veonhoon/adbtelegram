@@ -26,8 +26,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Deployment folders (generated)
-deployment/
+# Deployment folders (now included in repo)
+# deployment/
 
 # PM2
 .pm2/

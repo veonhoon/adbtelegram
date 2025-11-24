@@ -22,7 +22,9 @@
       "Bash(findstr:*)",
       "Bash(adb devices:*)",
       "Bash(node initialize-expected-devices.js:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git push:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
