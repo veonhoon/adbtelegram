@@ -6,6 +6,7 @@ export interface Server {
   name: string;
   last_seen: number;
   status: 'online' | 'offline';
+  health_url?: string;
 }
 
 export interface Device {
@@ -84,16 +85,17 @@ export class ADBDatabase {
   }
 
   // Server operations
-  upsertServer(id: string, name: string, status: 'online' | 'offline' = 'online'): void {
+  upsertServer(id: string, name: string, status: 'online' | 'offline' = 'online', healthUrl?: string): void {
     const stmt = this.db.prepare(`
-      INSERT INTO servers (id, name, last_seen, status)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO servers (id, name, last_seen, status, health_url)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         last_seen = excluded.last_seen,
-        status = excluded.status
+        status = excluded.status,
+        health_url = excluded.health_url
     `);
-    stmt.run(id, name, Date.now(), status);
+    stmt.run(id, name, Date.now(), status, healthUrl || null);
   }
 
   getServer(id: string): Server | undefined {

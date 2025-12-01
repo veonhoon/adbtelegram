@@ -22,7 +22,7 @@ const phoneMapping = {
   '26141FDF6005GJ': 'Phone-67',
   '23131FDF6000JY': 'Phone-69',
   '19241FDF6000AS': 'Phone-74',
-  '1B231FDF600CK3': 'Phone-76',
+  '23311FDF6003K0': 'Phone-76',
   '19031FDF600FJU': 'Phone-78',
   '19131FDF6009XZ': 'Phone-79',
   '19141FDF600BFM': 'Phone-80',

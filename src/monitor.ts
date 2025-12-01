@@ -10,6 +10,7 @@ export interface MonitorConfig {
   serverName: string;
   checkIntervalSeconds: number;
   database: ADBDatabase;
+  healthUrl?: string;
   onStatusChange?: (serial: string, oldStatus: string, newStatus: string) => void;
 }
 
@@ -30,7 +31,7 @@ export class DeviceMonitor {
    * Initialize the server in database
    */
   async initialize(): Promise<void> {
-    this.db.upsertServer(this.config.serverId, this.config.serverName, 'online');
+    this.db.upsertServer(this.config.serverId, this.config.serverName, 'online', this.config.healthUrl);
     console.log(`✓ Server registered: ${this.config.serverName} (${this.config.serverId})`);
   }
 

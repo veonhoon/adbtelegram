@@ -12,6 +12,7 @@ async function main() {
   const mode = process.env.MODE || 'standalone';
   const serverId = process.env.SERVER_ID || 'server-1';
   const serverName = process.env.SERVER_NAME || 'Main Server';
+  const healthUrl = process.env.SERVER_HEALTH_URL;
   const checkInterval = parseInt(process.env.CHECK_INTERVAL_SECONDS || '30');
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const dbPath = process.env.DB_PATH || './adb_tracker.db';
@@ -32,7 +33,8 @@ async function main() {
       serverId,
       serverName,
       checkIntervalSeconds: checkInterval,
-      database: db
+      database: db,
+      healthUrl
     });
 
     await monitor.initialize();
@@ -65,7 +67,9 @@ async function main() {
     });
 
     bot.startNotificationPolling(5000);
+    bot.startServerHealthChecks(30000);
     console.log('✓ Bot is running\n');
+    console.log('✓ Server health monitoring enabled\n');
 
     // Graceful shutdown
     const shutdown = () => {

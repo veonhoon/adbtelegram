@@ -17,7 +17,7 @@ export class ADBMonitor {
    */
   async getConnectedDevices(): Promise<ADBDevice[]> {
     try {
-      const { stdout } = await execAsync('adb devices -l');
+      const { stdout } = await execAsync('adb devices -l', { windowsHide: true });
       return this.parseADBDevices(stdout);
     } catch (error) {
       console.error('Error executing adb devices:', error);
@@ -88,7 +88,7 @@ export class ADBMonitor {
    */
   async isADBAvailable(): Promise<boolean> {
     try {
-      await execAsync('adb version');
+      await execAsync('adb version', { windowsHide: true });
       return true;
     } catch {
       return false;
@@ -100,8 +100,8 @@ export class ADBMonitor {
    */
   async restartADBServer(): Promise<void> {
     try {
-      await execAsync('adb kill-server');
-      await execAsync('adb start-server');
+      await execAsync('adb kill-server', { windowsHide: true });
+      await execAsync('adb start-server', { windowsHide: true });
     } catch (error) {
       console.error('Error restarting ADB server:', error);
       throw error;
@@ -118,7 +118,7 @@ export class ADBMonitor {
 
       for (const prop of properties) {
         try {
-          const { stdout } = await execAsync(`adb -s ${serial} shell getprop ${prop}`);
+          const { stdout } = await execAsync(`adb -s ${serial} shell getprop ${prop}`, { windowsHide: true });
           const key = prop.split('.').pop() || prop;
           info[key] = stdout.trim();
         } catch {
@@ -130,6 +130,37 @@ export class ADBMonitor {
     } catch (error) {
       console.error(`Error getting device info for ${serial}:`, error);
       return {};
+    }
+  }
+
+  /**
+   * Mute device completely - sets all volume streams to 0
+   */
+  async muteDevice(serial: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Use input keyevent to set volumes to minimum
+      // This simulates pressing volume down buttons multiple times
+
+      // Press volume down 25 times to ensure all volumes are at 0
+      // This affects media, ring, notification, and alarm volumes
+      for (let i = 0; i < 25; i++) {
+        await execAsync(`adb -s ${serial} shell input keyevent KEYCODE_VOLUME_DOWN`, { windowsHide: true });
+      }
+
+      // Set ringer mode to silent using settings command
+      await execAsync(`adb -s ${serial} shell settings put global zen_mode 1`, { windowsHide: true });
+
+      // Also disable all notification sounds via settings
+      await execAsync(`adb -s ${serial} shell settings put system volume_ring 0`, { windowsHide: true });
+      await execAsync(`adb -s ${serial} shell settings put system volume_notification 0`, { windowsHide: true });
+      await execAsync(`adb -s ${serial} shell settings put system volume_music 0`, { windowsHide: true });
+      await execAsync(`adb -s ${serial} shell settings put system volume_alarm 0`, { windowsHide: true });
+      await execAsync(`adb -s ${serial} shell settings put system volume_system 0`, { windowsHide: true });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error(`Error muting device ${serial}:`, error);
+      return { success: false, error: error.message };
     }
   }
 }

@@ -1,6 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { ADBDatabase, Device, Server } from './database';
 import { ADBMonitor } from './adb-monitor';
+import http from 'http';
+import https from 'https';
 
 export interface BotConfig {
   token: string;
@@ -109,6 +111,21 @@ Use these commands to manage your device farm!
       await this.handleRenameCommand(msg.chat.id, args);
     });
 
+    // Mute command - mute all phones
+    this.bot.onText(/\/mute(?:\s+(.+))?/, async (msg, match) => {
+      const serverId = match?.[1]?.trim();
+      await this.handleMuteCommand(msg.chat.id, serverId);
+    });
+
+    // Server command execution - execute shell commands on specific server
+    this.bot.onText(/\/(lulu|opti|mini|paso|dojang)\s+(.+)/, async (msg, match) => {
+      const serverId = match?.[1]?.toLowerCase();
+      const command = match?.[2]?.trim();
+      if (serverId && command) {
+        await this.handleServerCommand(msg.chat.id, serverId, command);
+      }
+    });
+
     // Error handling
     this.bot.on('polling_error', (error) => {
       console.error('Polling error:', error);
@@ -131,12 +148,24 @@ Use these commands to manage your device farm!
 /rename <serial> <server_id> <name> - Rename a device
 /scan [server_id] - Scan for new devices
 
+*Device Control:*
+/mute [server_id] - Mute all online devices (all servers or specific)
+
+*Server Commands:*
+/lulu <command> - Execute shell command on Lulu server
+/opti <command> - Execute shell command on Opti server
+/mini <command> - Execute shell command on Mini server
+/paso <command> - Execute shell command on Paso server
+/dojang <command> - Execute shell command on Dojang server
+
 *Notifications:*
 /notify - Enable notifications for this chat
 
 *Examples:*
-\`/devices server-1\`
-\`/add ABC123 server-1 Phone-1\`
+\`/devices lulu\`
+\`/add ABC123 lulu Phone-1\`
+\`/lulu adb devices\`
+\`/lulu pm2 list\`
 \`/rename ABC123 server-1 Phone-2\`
 \`/remove ABC123 server-1\`
     `.trim();
@@ -217,7 +246,15 @@ Use these commands to manage your device farm!
     }
 
     // Overall summary
-    message += `📈 *Total: ${totalOnline}/${totalDevices} online*`;
+    message += `📈 *Total: ${totalOnline}/${totalDevices} online*\n\n`;
+
+    // Server status summary
+    message += `🖥️ *Servers:*\n`;
+    servers.forEach(server => {
+      const statusIcon = server.status === 'online' ? '🟢' : '🔴';
+      const statusText = server.status === 'online' ? 'Online' : 'Offline';
+      message += `  ${statusIcon} ${server.name}: ${statusText}\n`;
+    });
 
     this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   }
@@ -383,6 +420,133 @@ Use these commands to manage your device farm!
     this.bot.sendMessage(chatId, `✓ Renamed device \`${serial}\` to *${newName}*`, { parse_mode: 'Markdown' });
   }
 
+  private async handleMuteCommand(chatId: number, serverId?: string): Promise<void> {
+    await this.bot.sendMessage(chatId, '🔇 Starting mute operation...');
+
+    let devices;
+    if (serverId) {
+      devices = this.db.getDevicesByServer(serverId);
+      if (devices.length === 0) {
+        this.bot.sendMessage(chatId, `❌ No devices found on server \`${serverId}\``, { parse_mode: 'Markdown' });
+        return;
+      }
+    } else {
+      devices = this.db.getAllDevices();
+    }
+
+    const onlineDevices = devices.filter(d => d.status === 'online');
+
+    if (onlineDevices.length === 0) {
+      this.bot.sendMessage(chatId, '❌ No online devices found to mute');
+      return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    for (const device of onlineDevices) {
+      const result = await this.adbMonitor.muteDevice(device.serial);
+      if (result.success) {
+        successCount++;
+      } else {
+        failCount++;
+        const deviceName = device.name || device.serial;
+        errors.push(`${deviceName}: ${result.error}`);
+      }
+    }
+
+    let message = `🔇 *Mute Operation Complete*\n\n`;
+    message += `✅ Successfully muted: ${successCount} device(s)\n`;
+
+    if (failCount > 0) {
+      message += `❌ Failed: ${failCount} device(s)\n\n`;
+      message += `*Errors:*\n`;
+      errors.slice(0, 10).forEach(err => {
+        message += `• ${err}\n`;
+      });
+      if (errors.length > 10) {
+        message += `\n_...and ${errors.length - 10} more errors_`;
+      }
+    }
+
+    await this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  }
+
+  private async handleServerCommand(chatId: number, serverId: string, command: string): Promise<void> {
+    // Check if this server is the current one
+    const currentServer = this.db.getAllServers().find(s => s.id === serverId);
+
+    if (!currentServer) {
+      this.bot.sendMessage(chatId, `❌ Server \`${serverId}\` not found`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // Get the actual server ID from environment to check if this is the local server
+    const localServerId = process.env.SERVER_ID || 'server-1';
+
+    if (serverId !== localServerId) {
+      this.bot.sendMessage(chatId, `❌ Cannot execute commands on remote server \`${serverId}\`.\n\nCommands can only be executed on the local server (\`${localServerId}\`).`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // Send initial message
+    await this.bot.sendMessage(chatId, `⚙️ Executing on *${currentServer.name}*:\n\`${command}\`\n\nPlease wait...`, { parse_mode: 'Markdown' });
+
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // Execute command with timeout
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: 60000, // 60 second timeout
+        windowsHide: true,
+        maxBuffer: 1024 * 1024 * 5 // 5MB buffer
+      });
+
+      let response = `✅ *Command completed on ${currentServer.name}*\n\n`;
+      response += `📝 Command: \`${command}\`\n\n`;
+
+      if (stdout) {
+        const output = stdout.trim();
+        // Limit output to 3000 characters for Telegram
+        const limitedOutput = output.length > 3000 ? output.substring(0, 3000) + '\n\n... (output truncated)' : output;
+        response += `📤 Output:\n\`\`\`\n${limitedOutput}\n\`\`\`\n`;
+      }
+
+      if (stderr) {
+        const errorOutput = stderr.trim();
+        const limitedError = errorOutput.length > 1000 ? errorOutput.substring(0, 1000) + '\n... (truncated)' : errorOutput;
+        response += `⚠️ Stderr:\n\`\`\`\n${limitedError}\n\`\`\``;
+      }
+
+      if (!stdout && !stderr) {
+        response += `ℹ️ Command executed with no output`;
+      }
+
+      await this.bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+    } catch (error: any) {
+      let errorMsg = `❌ *Command failed on ${currentServer.name}*\n\n`;
+      errorMsg += `📝 Command: \`${command}\`\n\n`;
+      errorMsg += `⚠️ Error: ${error.message}`;
+
+      if (error.stdout) {
+        const output = error.stdout.trim();
+        const limitedOutput = output.length > 1000 ? output.substring(0, 1000) + '\n... (truncated)' : output;
+        errorMsg += `\n\n📤 Output:\n\`\`\`\n${limitedOutput}\n\`\`\``;
+      }
+
+      if (error.stderr) {
+        const errOut = error.stderr.trim();
+        const limitedErr = errOut.length > 1000 ? errOut.substring(0, 1000) + '\n... (truncated)' : errOut;
+        errorMsg += `\n\n⚠️ Stderr:\n\`\`\`\n${limitedErr}\n\`\`\``;
+      }
+
+      await this.bot.sendMessage(chatId, errorMsg, { parse_mode: 'Markdown' });
+    }
+  }
+
   private getStatusIcon(status: string): string {
     switch (status) {
       case 'online': return '🟢';
@@ -399,6 +563,51 @@ Use these commands to manage your device farm!
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  /**
+   * Check server health by making HTTP request to health_url
+   */
+  private async checkServerHealth(server: Server): Promise<boolean> {
+    if (!server.health_url) return true; // No health URL means assume online
+
+    return new Promise((resolve) => {
+      const url = new URL(server.health_url!);
+      const client = url.protocol === 'https:' ? https : http;
+
+      const req = client.get(server.health_url!, { timeout: 5000 }, (res) => {
+        // Consider server online if status code is 2xx or 3xx
+        resolve(res.statusCode !== undefined && res.statusCode < 400);
+      });
+
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+      });
+    });
+  }
+
+  /**
+   * Start periodic server health checks
+   */
+  startServerHealthChecks(intervalMs: number = 30000): void {
+    setInterval(async () => {
+      const servers = this.db.getAllServers();
+
+      for (const server of servers) {
+        if (server.health_url) {
+          const isHealthy = await this.checkServerHealth(server);
+          const newStatus = isHealthy ? 'online' : 'offline';
+
+          // Only update if status changed
+          if (server.status !== newStatus) {
+            this.db.updateServerStatus(server.id, newStatus);
+            console.log(`Server ${server.name} status changed: ${server.status} → ${newStatus}`);
+          }
+        }
+      }
+    }, intervalMs);
   }
 
   /**

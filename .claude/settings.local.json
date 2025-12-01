@@ -24,7 +24,14 @@
       "Bash(node initialize-expected-devices.js:*)",
       "Bash(taskkill:*)",
       "Bash(git push:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(pm2 list:*)",
+      "Bash(cmd //c start-bot.bat)",
+      "Bash(pm2 start:*)",
+      "Bash(pm2 save:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(pm2 delete:*)",
+      "Bash(pm2 restart:*)"
     ],
     "deny": [],
     "ask": []
