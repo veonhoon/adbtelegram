@@ -6,6 +6,13 @@ echo  ADB Tracker Bot - Multi-Server Setup
 echo ========================================
 echo.
 
+REM Server IPs (Lulu is the main database server)
+set LULU_IP=192.168.1.22
+set OPTI_IP=192.168.1.30
+set MINI_IP=192.168.1.171
+set PASO_IP=192.168.1.118
+set DOJANG_IP=192.168.1.194
+
 REM Check if Node.js is installed
 where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
@@ -19,9 +26,8 @@ REM Check if PM2 is installed
 where pm2 >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: PM2 is not installed!
-    echo Please install PM2 globally: npm install -g pm2
-    pause
-    exit /b 1
+    echo Installing PM2 globally...
+    call npm install -g pm2
 )
 
 REM Check if ADB is available
@@ -33,36 +39,93 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo All prerequisites checked successfully!
+echo All prerequisites checked!
 echo.
 
 REM Prompt for server selection
 echo Select server to configure:
-echo 1. Lulu
-echo 2. Opti
-echo 3. Mini
-echo 4. Paso
-echo 5. Dojang
+echo.
+echo   1. Lulu    (192.168.1.22)  - MAIN SERVER
+echo   2. Opti    (192.168.1.30)
+echo   3. Mini    (192.168.1.171)
+echo   4. Paso    (192.168.1.118)
+echo   5. Dojang  (192.168.1.194)
 echo.
 set /p server_choice="Enter choice (1-5): "
 
-if "%server_choice%"=="1" set SERVER_ID=lulu
-if "%server_choice%"=="2" set SERVER_ID=opti
-if "%server_choice%"=="3" set SERVER_ID=mini
-if "%server_choice%"=="4" set SERVER_ID=paso
-if "%server_choice%"=="5" set SERVER_ID=dojang
+if "%server_choice%"=="1" (
+    set SERVER_ID=lulu
+    set IS_MAIN=1
+)
+if "%server_choice%"=="2" (
+    set SERVER_ID=opti
+    set IS_MAIN=0
+)
+if "%server_choice%"=="3" (
+    set SERVER_ID=mini
+    set IS_MAIN=0
+)
+if "%server_choice%"=="4" (
+    set SERVER_ID=paso
+    set IS_MAIN=0
+)
+if "%server_choice%"=="5" (
+    set SERVER_ID=dojang
+    set IS_MAIN=0
+)
 
 if not defined SERVER_ID (
-    echo Invalid choice! Please run the script again.
+    echo Invalid choice! Please run again.
     pause
     exit /b 1
 )
 
 echo.
-echo Selected server: %SERVER_ID%
+echo Selected: %SERVER_ID%
 echo.
 
+REM Set database path based on server
+if "%IS_MAIN%"=="1" (
+    echo This is the MAIN server - using local database
+    set DB_PATH=C:/ADBTracker/adb_tracker.db
+
+    REM Create folder if needed
+    if not exist "C:\ADBTracker" mkdir "C:\ADBTracker"
+
+    REM Copy existing db if exists and target doesn't
+    if exist "adb_tracker.db" (
+        if not exist "C:\ADBTracker\adb_tracker.db" (
+            copy adb_tracker.db "C:\ADBTracker\adb_tracker.db"
+        )
+    )
+) else (
+    echo This is an AGENT server - connecting to Lulu's database
+    set DB_PATH=\\%LULU_IP%\ADBTracker\adb_tracker.db
+
+    echo.
+    echo Testing connection to Lulu's database...
+    if exist "\\%LULU_IP%\ADBTracker\adb_tracker.db" (
+        echo ✓ Successfully connected to shared database!
+    ) else (
+        echo.
+        echo ⚠ WARNING: Cannot access \\%LULU_IP%\ADBTracker\adb_tracker.db
+        echo.
+        echo Please ensure on Lulu server:
+        echo   1. Folder C:\ADBTracker exists
+        echo   2. Folder is shared as "ADBTracker" with read/write access
+        echo   3. The database file exists in that folder
+        echo.
+        echo To share the folder on Lulu:
+        echo   1. Right-click C:\ADBTracker
+        echo   2. Properties ^> Sharing ^> Share
+        echo   3. Add "Everyone" with Read/Write permissions
+        echo.
+        set /p continue="Press Enter to continue anyway or Ctrl+C to exit..."
+    )
+)
+
 REM Create .env file
+echo.
 echo Creating .env configuration...
 (
 echo # Telegram Bot Configuration
@@ -78,20 +141,20 @@ echo # Monitoring Configuration
 echo CHECK_INTERVAL_SECONDS=30
 echo.
 echo # Database Configuration
-echo DB_PATH=
+echo DB_PATH=%DB_PATH%
 echo.
 echo # Mode
 echo MODE=standalone
 ) > .env
 
-echo ✓ .env file created successfully!
+echo ✓ .env created!
 echo.
 
 REM Install dependencies
 echo Installing dependencies...
 call npm install
 if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to install dependencies!
+    echo ERROR: npm install failed!
     pause
     exit /b 1
 )
@@ -99,59 +162,46 @@ echo ✓ Dependencies installed!
 echo.
 
 REM Build TypeScript
-echo Building TypeScript code...
+echo Building TypeScript...
 call npm run build
 if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to build TypeScript!
+    echo ERROR: Build failed!
     pause
     exit /b 1
 )
-echo ✓ TypeScript built successfully!
+echo ✓ Build complete!
 echo.
 
-REM Detect and create rename script
+REM Run device detection and setup
 echo Detecting connected ADB devices...
 node detect-and-rename.js %SERVER_ID%
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to detect devices!
-    pause
-    exit /b 1
-)
 echo.
 
-REM Initialize database with expected devices
-echo Initializing database with expected devices...
-node initialize-expected-devices.js
-if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: Failed to initialize expected devices
-)
+REM Initialize expected devices in database
+echo Initializing expected devices...
+node initialize-expected-devices.js 2>nul
 echo.
 
-REM Rename connected devices
-echo Renaming connected devices...
-node rename-devices.js
-if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: Failed to rename devices
-)
+REM Rename detected devices
+echo Renaming devices...
+node rename-devices.js 2>nul
 echo.
 
-REM Stop any existing bot
+REM Stop existing bot
 echo Stopping any existing bot...
 pm2 delete telegrambot 2>nul
 echo.
 
 REM Start bot with PM2
-echo Starting Telegram bot with PM2...
+echo Starting Telegram bot...
 pm2 start dist/index.js --name "telegrambot"
 if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to start bot with PM2!
+    echo ERROR: Failed to start bot!
     pause
     exit /b 1
 )
-echo.
 
-REM Save PM2 configuration
-echo Saving PM2 configuration...
+REM Save PM2 config
 pm2 save
 echo.
 
@@ -159,17 +209,16 @@ echo ========================================
 echo  ✅ Setup Complete for %SERVER_ID%!
 echo ========================================
 echo.
-echo The bot is now running and monitoring devices.
+echo Database: %DB_PATH%
 echo.
-echo Useful PM2 commands:
-echo   pm2 list              - View bot status
-echo   pm2 logs telegrambot  - View bot logs
-echo   pm2 restart telegrambot - Restart the bot
-echo   pm2 stop telegrambot  - Stop the bot
+echo PM2 Commands:
+echo   pm2 list              - View status
+echo   pm2 logs telegrambot  - View logs
+echo   pm2 restart telegrambot - Restart
 echo.
-echo Telegram commands:
-echo   /status - View all devices across all servers
-echo   /%SERVER_ID% adb devices - Run commands on this server
-echo   /mute %SERVER_ID% - Mute all phones on this server
+echo Telegram Commands:
+echo   /status              - All servers status
+echo   /%SERVER_ID% adb devices - Run command on this server
+echo   /mute %SERVER_ID%    - Mute phones on this server
 echo.
 pause
